@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { dev } from '$app/environment';
   import { fade } from 'svelte/transition';
 	import { chainEnhance, formChain } from '$lib/index.js';
 	import { onMount } from 'svelte';
@@ -9,12 +8,25 @@
 	import DOMPurify from 'dompurify';
 	import typescript from 'highlight.js/lib/languages/typescript';
   import plaintext from 'highlight.js/lib/languages/plaintext';
-
-  // import 'highlight.js/styles/github-dark.css'
-  import 'highlight.js/styles/github.css'
 	import FileDropper from './FileDropper/FileDropper.svelte';
 
-  console.log('🌐 Running in', dev ? 'development' : 'production', 'mode');
+  import 'highlight.js/styles/github.css'
+
+  let startTime = $state(0);
+  let elapsed = $state(0);
+  let timer: ReturnType<typeof setInterval> | null = null;
+
+  // Watch for the workflow starting/stopping
+  $effect(() => {
+    if (formState === 'running' && !timer) {
+      timer = setInterval(() => {
+        elapsed = Math.round((performance.now() - startTime) / 1);
+      }, 1);
+    } else if (formState !== 'running' && timer) {
+      clearInterval(timer);
+      timer = null;
+    }
+  });
 
 	// Register syntax highlighting
 	hljs.registerLanguage('typescript', typescript);
@@ -49,7 +61,10 @@
 
 	const chained = chainEnhance(['markdown', 'seo', 'save', 'publish'], {
 		onStep: (name, data, index, total) => {
-			console.log(`Step ${index} of ${total}: ${name}`);
+      if (index === 1) {
+        startTime = performance.now();
+        elapsed = 0;
+      }
 			formState = 'running';
 		},
 		onSuccess: (data) => {
@@ -74,29 +89,16 @@
 
   onMount(async () => {
     try {
-      const localModules = import.meta.glob('../../README.md', {
-        eager: true,
-        query: '?raw'
-      });
+      // 🌐 Fetch README.md from /static (works in dev + production)
+      const res = await fetch('/README.md');
 
-      const deployedModules = import.meta.glob('./README.md', {
-        eager: true,
-        query: '?raw'
-      });
+      if (!res.ok) throw new Error(`Failed to fetch README.md: ${res.statusText}`);
 
-      const modules = dev ? localModules : deployedModules;
-
-      const entry = Object.entries(modules)[0];
-      if (!entry) throw new Error('README.md not found');
-
-      const [_, mod] = entry;
-      const content =
-        typeof mod === 'string'
-          ? mod
-          : (mod as { default: string }).default ?? '';
-
+      const content = await res.text();
       const rendered = await md.parse(content);
       htmlReadme = DOMPurify.sanitize(rendered as string);
+
+      console.log('📘 Loaded README.md successfully');
     } catch (err) {
       console.error('❌ Failed to load README:', err);
       htmlReadme = '<p style="color:red;">Failed to load documentation.</p>';
@@ -170,14 +172,30 @@
 
 					<button type="submit">🚀 Start Workflow</button>
 				</form>
-			{:else if formState === 'running'}
-				<div class="progress-banner">
-					⚙️ Running chained workflow...
-					{#if chain.step && chain.step !== 'complete'}
-						<br />
-						Step: <strong>{chain.step}</strong>
-					{/if}
-				</div>
+      {:else if formState === 'running'}
+        <div class="progress-banner">
+          <div class="progress-header">
+            ⚙️ Running chained workflow
+          </div>
+
+          {#if chain.step && chain.step !== 'complete'}
+            <div class="progress-step">
+              <div class="step-title">
+                Step {chain.current} of {chain.total} — <strong>{chain.step}</strong>
+              </div>
+
+              <div class="progress-bar">
+                <div class="progress-fill" style="width: {chain.percent}%;"></div>
+              </div>
+
+              {#if chain.percent < 100}
+                <p class="progress-time">
+                  ⏱ Elapsed: {elapsed}ms
+                </p>
+              {/if}
+            </div>
+          {/if}
+        </div>
 			{:else if formState === 'complete'}
 				<div class="success-card">
 					<h2>✅ Workflow Complete!</h2>
@@ -291,6 +309,79 @@
 	button:hover {
 		background: var(--color-accent-hover);
 	}
+  
+  /* ===== Progress Banner ===== */
+.progress-banner {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	margin-top: 2rem;
+	padding: 2rem;
+	background: linear-gradient(
+		145deg,
+		var(--color-surface),
+		color-mix(in srgb, var(--color-accent) 10%, var(--color-surface))
+	);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius);
+	color: var(--color-text);
+	box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+	animation: fadeIn 0.4s ease;
+}
+
+.progress-header {
+	font-size: 1.25rem;
+	font-weight: 600;
+	margin-bottom: 1rem;
+	text-align: center;
+}
+
+.progress-step {
+	width: 100%;
+	max-width: 420px;
+	text-align: center;
+}
+
+.step-title {
+	font-weight: 500;
+	font-size: 1.1rem;
+	margin-bottom: 0.75rem;
+}
+
+.progress-bar {
+	width: 100%;
+	height: 10px;
+	background: var(--color-border);
+	border-radius: 999px;
+	overflow: hidden;
+	position: relative;
+}
+
+.progress-fill {
+	height: 100%;
+	background: var(--color-accent);
+	border-radius: 999px;
+	transition: width 0.35s ease;
+}
+
+.progress-time {
+	margin-top: 0.75rem;
+	font-size: 0.95rem;
+	color: var(--color-text-muted);
+	font-style: italic;
+}
+
+@keyframes fadeIn {
+	from {
+		opacity: 0;
+		transform: translateY(6px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
 
 	.progress-banner {
 		margin-top: 2rem;

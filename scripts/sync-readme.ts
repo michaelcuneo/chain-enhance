@@ -8,7 +8,7 @@ export function syncReadmePlugin(): PluginOption {
 		apply: (config, env) => env.command === 'serve' || env.command === 'build',
 		buildStart() {
 			const rootReadme = path.resolve(process.cwd(), 'README.md');
-			const destReadme = path.resolve(process.cwd(), 'src/routes/docs/README.md');
+			const destReadme = path.resolve(process.cwd(), 'static/README.md');
 
 			if (!fs.existsSync(rootReadme)) {
 				console.warn('⚠️ No root README.md found — skipping sync.');

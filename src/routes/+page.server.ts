@@ -40,7 +40,8 @@ export const actions: Actions = {
 			ok: true,
 			message: 'Markdown processed',
 			data: {
-				wordCount
+				wordCount: wordCount,
+				abstract: prev.description?.slice(0, 150) || ''
 			}
 		};
 	},

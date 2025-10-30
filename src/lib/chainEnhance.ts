@@ -119,7 +119,7 @@ export function chainEnhance(
 
 				let combined: Record<string, unknown> = {};
 				if (result.type === 'success' && result.data) {
-					const initial = extractStrictPayload(result.data, actions[0]);
+					const initial = extractStrictPayload(result.data, actions[0] ?? 'default-action');
 					combined = initial.data ?? {};
 				}
 
@@ -133,8 +133,8 @@ export function chainEnhance(
 					const action = actions[i];
 					const index = i + 1;
 
-					startStep(action, combined, index, total);
-					onStep?.(action, combined, index, total);
+					startStep(action ?? 'unknown-action', combined, index, total);
+					onStep?.(action ?? 'unknown-action', combined, index, total);
 
 					const fd = new FormData();
 					fd.append('__previous', safeStringify(combined));
@@ -147,7 +147,7 @@ export function chainEnhance(
 					} catch (err) {
 						const durationMs = +(performance.now() - stepStart).toFixed(2);
 						failStep(err);
-						history.push({ step: action, ok: false, durationMs });
+						history.push({ step: action ?? 'unknown-step', ok: false, durationMs });
 						onError?.(err);
 						return;
 					}
@@ -157,19 +157,22 @@ export function chainEnhance(
 					if (!res.ok) {
 						const txt = await res.text();
 						failStep(txt);
-						history.push({ step: action, ok: false, durationMs });
+						history.push({ step: action ?? 'unknown-step', ok: false, durationMs });
 						onError?.(txt);
 						return;
 					}
 
 					try {
 						const parsed = await res.json();
-						const { step, ok, message, data } = extractStrictPayload(parsed, action);
+						const { step, ok, message, data } = extractStrictPayload(
+							parsed,
+							action ?? 'unknown-action'
+						);
 						history.push({ step, ok, durationMs, message });
 						if (ok && data) combined = deepMerge(combined, data);
 					} catch (err) {
 						failStep(err);
-						history.push({ step: action, ok: false, durationMs });
+						history.push({ step: action ?? 'unknown-step', ok: false, durationMs });
 						onError?.(err);
 						return;
 					}
