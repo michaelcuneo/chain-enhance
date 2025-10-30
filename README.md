@@ -1,13 +1,13 @@
+---
+
 # 🪄 chain-enhance
 
-> **Sequentially chain multiple SvelteKit 5 form actions** with:
->
-> - strict **stage result contract** (schema below)
-> - **automatic data propagation** between steps
-> - **file-safe** handling (first step only)
-> - **progress callbacks** and abort/timeout controls
+> **Sequentially chain multiple [SvelteKit 5](https://kit.svelte.dev) form actions**
+> with deep-merged data propagation, type-safe results, reactive progress tracking,
+> and automatic file-safety.
 
-Works with SvelteKit 2 + Svelte 5 runes, SSR or SPA.
+Designed for real multi-stage workflows like
+**upload → parse → SEO → save → publish**.
 
 ---
 
@@ -21,101 +21,131 @@ pnpm add chain-enhance
 
 ---
 
-## ⚙️ Quick Start
+## ⚙️ Basic Usage
 
-### 1) Attach to your form
+### 1️⃣ Attach the enhancer to a form
 
 ```svelte
 <script lang="ts">
-	import { chainEnhance } from 'chain-enhance';
+	import { chainEnhance, formChain } from 'chain-enhance';
 	import { goto } from '$app/navigation';
 
-	let state = $state<'idle' | string>('idle');
-	let pct = $state(0);
+	let formState = $state<'idle' | 'running' | 'complete' | 'error'>('idle');
+	let result: Record<string, any> = $state({});
 
 	const chained = chainEnhance(['markdown', 'seo', 'save', 'publish'], {
-		onStep: (name, data, i, total) => {
-			state = name;
-			pct = Math.round((i / total) * 100);
+		onStep: (step, data, index, total) => {
+			console.log(`Step ${index}/${total}: ${step}`, data);
+			formState = 'running';
 		},
 		onSuccess: (final) => {
-			console.log('✅ done', final);
+			console.log('✅ Chain complete', final);
+			result = final.final ?? {};
+			formState = 'complete';
 			goto('/success');
 		},
-		onError: (err) => console.error('❌', err),
-		// optional controls:
-		timeoutMs: 30000, // per-step timeout
-		passHeaders: ['x-id'] // forward these request headers to each step
+		onError: (err) => {
+			console.error('❌ Chain failed', err);
+			formState = 'error';
+		}
 	});
 </script>
 
 <form method="POST" action="?/upload" use:chained enctype="multipart/form-data">
-	<input name="title" placeholder="Title" required />
+	<input type="text" name="title" required />
 	<input type="file" name="featuredImage" accept="image/*" required />
-	<button type="submit">Start</button>
+	<button>Start Workflow</button>
 </form>
 
-{#if state !== 'idle'}
-	<div class="progress-banner">Step {pct}% — <strong>{state}</strong></div>
+{#if formState === 'running'}
+	<p>⚙️ Running workflow — step {$formChain.current} of {$formChain.total}</p>
 {/if}
 ```
 
-### 2) Define server actions
+---
+
+### 2️⃣ Define Server Actions
+
+Each step must return the standardized `ChainStepResponse` shape.
 
 ```ts
-// +page.server.ts
-import type { Actions } from './$types';
+import type { ChainStepResponse } from 'chain-enhance';
 
-export const actions: Actions = {
-	// 1) MUST handle files (only first step can read the File)
-	upload: async ({ request }) => {
-		const fd = await request.formData();
-		const file = fd.get('featuredImage') as File;
+export const actions = {
+	upload: async ({ request }): Promise<ChainStepResponse> => {
+		const data = await request.formData();
+		const title = data.get('title')?.toString();
+		const file = data.get('featuredImage') as File;
 
-		// ... upload to S3 (simulated)
-		await new Promise((r) => setTimeout(r, 250));
+		await new Promise((r) => setTimeout(r, 800)); // simulate upload
 
 		return {
-			ok: true,
 			step: 'upload',
-			merge: { featuredImageUrl: 'https://placekitten.com/600/400' }
+			ok: true,
+			message: 'File uploaded',
+			data: {
+				title,
+				featuredImageName: file.name
+			}
 		};
 	},
 
-	// 2) Regular JSON-only steps
-	markdown: async ({ request }) => {
-		const prev = JSON.parse((await request.formData()).get('__previous')!.toString());
+	markdown: async ({ request }): Promise<ChainStepResponse> => {
+		const prev = JSON.parse((await request.formData()).get('__previous')?.toString() ?? '{}');
+		await new Promise((r) => setTimeout(r, 800));
+
 		return {
-			ok: true,
 			step: 'markdown',
-			merge: { wordCount: 245, title: prev.title }
+			ok: true,
+			message: 'Markdown processed',
+			data: {
+				wordCount: prev.description?.split(/\s+/).length ?? 0
+			}
 		};
 	},
 
-	seo: async ({ request }) => {
-		const prev = JSON.parse((await request.formData()).get('__previous')!.toString());
+	seo: async ({ request }): Promise<ChainStepResponse> => {
+		const prev = JSON.parse((await request.formData()).get('__previous')?.toString() ?? '{}');
+		await new Promise((r) => setTimeout(r, 800));
+
 		return {
-			ok: true,
 			step: 'seo',
-			merge: { meta: { title: prev.title, description: 'SEO generated' } }
+			ok: true,
+			message: 'SEO metadata generated',
+			data: {
+				meta: {
+					title: prev.title,
+					description: prev.abstract,
+					keywords: ['svelte', 'chain', 'form']
+				}
+			}
 		};
 	},
 
-	save: async ({ request }) => {
-		const prev = JSON.parse((await request.formData()).get('__previous')!.toString());
+	save: async ({ request }): Promise<ChainStepResponse> => {
+		const prev = JSON.parse((await request.formData()).get('__previous')?.toString() ?? '{}');
+		await new Promise((r) => setTimeout(r, 800));
+
 		return {
-			ok: true,
 			step: 'save',
-			merge: { id: crypto.randomUUID(), savedAt: new Date().toISOString(), ...prev }
+			ok: true,
+			message: 'Saved to database',
+			data: {
+				projectId: crypto.randomUUID(),
+				timestamp: new Date().toISOString()
+			}
 		};
 	},
 
-	publish: async ({ request }) => {
-		const prev = JSON.parse((await request.formData()).get('__previous')!.toString());
+	publish: async ({ request }): Promise<ChainStepResponse> => {
+		const prev = JSON.parse((await request.formData()).get('__previous')?.toString() ?? '{}');
+		await new Promise((r) => setTimeout(r, 800));
+
 		return {
-			ok: true,
 			step: 'publish',
-			merge: { message: `Published "${prev.title}"` }
+			ok: true,
+			message: `Project "${prev.title}" published successfully!`,
+			data: {}
 		};
 	}
 };
@@ -123,206 +153,194 @@ export const actions: Actions = {
 
 ---
 
-## 🧱 The Contract (READ THIS)
-
-Every action (stage) **MUST** return **exactly** this shape:
+## 🧱 Type Contracts
 
 ```ts
-type ChainStageResult = {
-	ok: boolean; // REQUIRED
-	step: string; // REQUIRED (the stage name)
-	merge?: Record<string, any>; // OPTIONAL: shallow-merged into the running payload
-	error?: string; // OPTIONAL: human-friendly error (when ok=false)
-	redirect?: string; // OPTIONAL: URL to redirect; chain stops
-	status?: number; // OPTIONAL: HTTP status, default 200 when ok=true
-	// You can extend with extra metadata; it is ignored for merge unless inside `merge`
-};
-```
+export interface ChainStepData {
+	[key: string]: unknown;
+}
 
-### Reserved fields (don’t use these as your own keys)
+/** Response shape required from each action step. */
+export interface ChainStepResponse {
+	step: string; // step name
+	ok: boolean; // success flag
+	message?: string; // optional short message
+	data?: ChainStepData; // optional structured payload
+}
 
-- `__previous` — JSON string of the cumulative payload sent by the client to each step
-- `__chain` — internal, used by the enhancer (step index, total, etc.)
+/** Accumulated result returned to `onSuccess`. */
+export interface ChainCombinedResult extends ChainStepResponse {
+	history?: ChainStepResponse[]; // all intermediate step responses
+	final?: ChainStepData; // deeply merged result
+}
 
-### Merge semantics
-
-- The enhancer maintains a **cumulative `combined` payload**:
-  - After each successful step, `combined = { ...combined, ...result.merge }` (shallow merge).
-  - Only keys under `merge` are added forward.
-
-- If `ok: false` → chain **stops**, `onError` fires with `{ step, error, status }`.
-
-### Files (critical!)
-
-- **Only the **first** request** contains the original `File`/`Blob`. Browsers do **not** re-stream files.
-- Subsequent steps receive **JSON only** (the enhancer sends `__previous` plus any original fields).
-- If you need the file later, **upload in step 1** and pass the **URL** forward in `merge`.
-
-### Redirects / Errors
-
-- If a stage returns `{ redirect: '/somewhere', ok: true }` → chain **stops** and the client navigates.
-- SvelteKit “throw redirect/err” also stops the chain (the enhancer treats non-200 as failure).
-- `ok: false` must include `error` (string). It’s surfaced to `onError`.
-
-### Non-serializable data
-
-- The enhancer serializes payloads for `__previous`. Non-serializable values are **dropped** with a console warning.
-- Keep it to plain objects, arrays, strings, numbers, booleans, null, dates-as-ISO.
-
----
-
-## 🔌 Client API
-
-```ts
-type ChainEnhanceOptions = {
-	onSuccess?: (final: Record<string, unknown>) => void;
-	onError?: (err: { step?: string; error?: string; status?: number; cause?: unknown }) => void;
-	onStep?: (step: string, data: Record<string, unknown>, index: number, total: number) => void;
-
-	timeoutMs?: number; // per-step timeout (AbortController)
-	passHeaders?: string[]; // forward whitelisted headers to each step
-	signal?: AbortSignal; // external cancel (eg. modal close)
-	withCredentials?: boolean; // send cookies/csrf on sub-requests (default true)
-};
-
-declare function chainEnhance(
-	actions: string[],
-	options?: ChainEnhanceOptions
-): (form: HTMLFormElement) => void;
-```
-
-**Behavior**
-
-- The first submission goes to the form’s `action` (eg. `?/upload`).
-- After success, each `actions[i]` is called via `fetch('?/stage-name', { method: 'POST', body: FormData })`.
-- The enhancer appends `__previous = JSON.stringify(combined)` to each step’s `FormData`.
-- On each 2xx JSON with `ok:true`, `merge` is shallow-merged and `onStep` is called.
-- On any non-2xx, timeout, `ok:false`, or thrown error → `onError` fires and the chain stops.
-
----
-
-## 🧪 Example “combined” payload (after all steps)
-
-```json
-{
-	"featuredImageUrl": "https://placekitten.com/600/400",
-	"wordCount": 245,
-	"meta": { "title": "My Demo Project", "description": "SEO generated" },
-	"id": "b83a09b3-e4c3-46aa-8f3b-30d55f58519b",
-	"savedAt": "2025-10-30T10:00:00.000Z",
-	"message": "Published \"My Demo Project\""
+/** Lifecycle callbacks for `chainEnhance`. */
+export interface ChainEnhanceCallbacks {
+	onStep?: (step: string, data: ChainStepData, index: number, total: number) => void;
+	onSuccess?: (result: ChainCombinedResult) => void;
+	onError?: (error: unknown) => void;
 }
 ```
 
 ---
 
-## 🧬 Best Practices (the “gotchas” we hit)
+## 🔗 How It Works
 
-- **Stage naming**: `step` must match the action name you provided (helps debugging & UI).
-- **Files**: do uploads **only in the first step**; pass URLs forward.
-- **Shaping output**: put all data you want to carry forward under `merge`.
-- **No deep merge**: we do shallow merges on purpose. If you need deep, merge on the server and return the shaped object.
-- **Redirects**: include `redirect` to end the chain intentionally.
-- **Timeouts**: use `timeoutMs` to avoid hanging stages; you can also pass an external `AbortSignal`.
-- **Headers**: `passHeaders` lets you forward whitelisted request headers to each step (e.g., trace IDs).
-- **Security**: keep CSRF/cookies on (default); never echo secrets into `merge`.
+1. The first form submission runs normally via `enhance()`.
+2. Its result’s `data` becomes the base payload.
+3. Each next action is called with:
 
----
+   ```ts
+   fd.append('__previous', JSON.stringify(combined));
+   ```
 
-## 🧰 Optional: Progress store
+4. Step responses are validated and **deeply merged**:
 
-If you prefer reactive UI without wiring callbacks everywhere:
+   ```ts
+   combined = deepMerge(combined, response.data);
+   ```
 
-```ts
-// pseudo API – align with your implementation
-import { formChain } from 'chain-enhance/store';
+5. After all steps complete, `onSuccess` fires with the merged `ChainCombinedResult`.
 
-$formChain.step; // string | 'idle'
-$formChain.index; // number
-$formChain.total; // number
-$formChain.status; // 'running' | 'complete' | 'error'
-$formChain.payload; // combined data so far
-```
+### Important rules
 
-The enhancer can emit into this store internally (if you wire it), and your UI can subscribe anywhere.
+- **Files/Blobs:** only supported in the **first** step.
+  Later steps receive JSON only.
+- Any error, `ok: false`, or thrown exception stops the chain.
+- Each step’s duration and result are recorded in `history`.
 
 ---
 
-## 🔒 TypeScript Types (copy/paste into your codebase)
+## 🧠 Deep Merge
+
+Nested objects are recursively merged between steps.
+Arrays and primitives are replaced.
 
 ```ts
-export type ChainStageResult = {
-	ok: boolean;
-	step: string;
-	merge?: Record<string, unknown>;
-	error?: string;
-	redirect?: string;
-	status?: number;
-	// extra metadata allowed
-	[key: string]: unknown;
-};
+// Step A
+data: { meta: { title: 'Hello', keywords: ['x'] } }
 
-export type ChainError = {
-	step?: string;
-	error?: string;
-	status?: number;
-	cause?: unknown;
-};
+// Step B
+data: { meta: { description: 'World' } }
 
-export type ChainEnhanceOptions = {
-	onSuccess?: (final: Record<string, unknown>) => void;
-	onError?: (err: ChainError) => void;
-	onStep?: (step: string, data: Record<string, unknown>, index: number, total: number) => void;
-	timeoutMs?: number;
-	passHeaders?: string[];
-	signal?: AbortSignal;
-	withCredentials?: boolean;
-};
+// Result
+combined = { meta: { title: 'Hello', keywords: ['x'], description: 'World' } }
 ```
 
 ---
 
-## 🧭 FAQ
+## 📊 Reactive Progress Store
 
-**Why only shallow merge?**
-Predictability. Stages should purposefully return the full object they want next, or mutate known keys. “Accidental” deep merges cause bugs.
+The `formChain` store tracks real-time progress across the workflow.
 
-**Can a step skip itself?**
-Yes: return `{ ok: true, step: 'x' }` with no `merge` to pass through.
+```ts
+import { formChain } from 'chain-enhance';
 
-**Can I retry a failed step?**
-Trigger another submission or build a small retry loop around `chainEnhance` (we don’t auto-retry to avoid duplicate writes).
+$formChain = {
+	step: 'seo',
+	current: 3,
+	total: 5,
+	percent: 60,
+	ok: true,
+	message: 'SEO metadata generated',
+	data: { meta: {...} }
+};
+```
 
-**Can I resume?**
-If you persist `combined` yourself, you can pre-seed the form and/or start a shorter chain with remaining steps.
+### API
+
+```ts
+export interface ChainProgress {
+	step: 'idle' | 'initial' | 'complete' | 'error' | string;
+	current: number;
+	total: number;
+	percent: number;
+	ok?: boolean;
+	message?: string;
+	data?: Record<string, unknown>;
+	error?: unknown;
+}
+
+startStep(step, data?, current?, total?)
+completeStep(final)
+failStep(error)
+```
+
+---
+
+## 🧾 Example Final Result
+
+```json
+{
+	"step": "publish",
+	"ok": true,
+	"message": "Completed 5 chained actions in 5021.44ms.",
+	"final": {
+		"title": "Demo Project",
+		"featuredImageName": "cat.jpg",
+		"wordCount": 243,
+		"meta": {
+			"title": "Demo Project",
+			"description": "SEO generated description",
+			"keywords": ["svelte", "chain", "form"]
+		},
+		"projectId": "0fa69e9c-74e8-465d-b8b0-62fa8b6d958d",
+		"timestamp": "2025-10-30T14:32:10.202Z"
+	},
+	"history": [
+		{ "step": "upload", "ok": true, "message": "File uploaded" },
+		{ "step": "markdown", "ok": true, "message": "Markdown processed" },
+		{ "step": "seo", "ok": true, "message": "SEO metadata generated" },
+		{ "step": "save", "ok": true, "message": "Saved to database" },
+		{ "step": "publish", "ok": true, "message": "Project \"Demo Project\" published successfully!" }
+	]
+}
+```
+
+---
+
+## ⚙️ API Reference
+
+```ts
+chainEnhance(actions: string[], options?: ChainEnhanceCallbacks): (form: HTMLFormElement) => void
+```
+
+| Parameter           | Type                             | Description                                       |
+| ------------------- | -------------------------------- | ------------------------------------------------- |
+| `actions`           | `string[]`                       | Ordered list of action names to chain             |
+| `options.onStep`    | `(step, data, i, total) => void` | Fired after each successful step                  |
+| `options.onSuccess` | `(result) => void`               | Fired when all steps complete                     |
+| `options.onError`   | `(err) => void`                  | Fired on network, parsing, or `ok:false` failures |
 
 ---
 
 ## ✅ Compatibility
 
-| Feature                            | Status |
-| ---------------------------------- | ------ |
-| SvelteKit ≥ 2.0 / Svelte 5 (runes) | ✅     |
-| TypeScript                         | ✅     |
-| Server Form Actions                | ✅     |
-| Multipart (first step only)        | ✅     |
-| SSR + SPA                          | ✅     |
-| SST v3 deployments                 | ✅     |
+| Feature                     | Status |
+| --------------------------- | ------ |
+| SvelteKit 2 / 5 (runes)     | ✅     |
+| TypeScript                  | ✅     |
+| Multipart (first step only) | ✅     |
+| Deep merge data propagation | ✅     |
+| Reactive progress store     | ✅     |
+| SSR + SPA                   | ✅     |
 
 ---
 
 ## 🧱 License
 
-MIT © Michael Cuneo
+MIT © Michael Cuneo (2025)
 
 ---
 
-### TL;DR (the **important** bits)
+### TL;DR
 
-- Each stage returns **`{ ok, step, merge?, error?, redirect? }`**.
-- **Only the first step** can read `File`; upload there and pass a **URL** forward.
-- We **shallow-merge** `merge` into a **cumulative payload** and send it to the next step in `__previous`.
-- Any `ok:false`, non-2xx, timeout, or thrown error → chain stops and `onError` fires.
-- Use `onStep` to show progress, `timeoutMs`/`signal` to control lifecycle, `passHeaders` for tracing.
+`chainEnhance()` = **`enhance()` on steroids**
 
-If you want me to drop this straight into your repo and wire the `formChain` store emits so the example UI updates everywhere, say the word and I’ll hand you the exact code.
+> _Upload → Parse → SEO → Save → Publish → Done_
+
+- Each step returns `{ step, ok, message?, data? }`
+- `data` objects deep-merge between steps
+- Files supported only in step 1
+- Reactive `formChain` store tracks progress
+- Fully typed · Zero boilerplate 🪄
