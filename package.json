@@ -1,6 +1,7 @@
 {
 	"name": "@michaelcuneo/chain-enhance",
 	"version": "0.0.1",
+	"description": "Sequentially chain multiple SvelteKit 5 form actions with progress tracking, deep merge, and type safety.",
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
@@ -23,15 +24,22 @@
 	],
 	"svelte": "./dist/index.js",
 	"types": "./dist/index.d.ts",
+	"main": "./dist/index.js",
+	"module": "./dist/index.js",
 	"exports": {
 		".": {
 			"types": "./dist/index.d.ts",
-			"svelte": "./dist/index.js"
-		}
+			"svelte": "./dist/index.js",
+			"import": "./dist/index.js",
+			"require": "./dist/index.js",
+			"default": "./dist/index.js"
+		},
+		"./package.json": "./package.json",
+		"./*": "./dist/*"
 	},
 	"peerDependencies": {
 		"svelte": "^5.0.0",
-		"@sveltejs/kit": "^2.43.2"
+		"@sveltejs/kit": "^2.0.0"
 	},
 	"devDependencies": {
 		"@eslint/compat": "^1.4.0",
@@ -58,9 +66,24 @@
 		"svelte-check": "^4.3.2",
 		"typescript": "^5.9.2",
 		"typescript-eslint": "^8.44.1",
-		"vite": "^7.1.7"
-	},
-	"dependencies": {
+		"vite": "^7.1.7",
 		"tsx": "^4.20.6"
+	},
+	"keywords": [
+		"svelte",
+		"sveltekit",
+		"form",
+		"enhance",
+		"workflow",
+		"chain",
+		"typescript"
+	],
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/michaelcuneo/chain-enhance.git"
+	},
+	"homepage": "https://chain-enhance.michaelcuneo.com.au",
+	"bugs": {
+		"url": "https://github.com/michaelcuneo/chain-enhance/issues"
 	}
 }
