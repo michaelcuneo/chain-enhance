@@ -1,5 +1,3 @@
----
-
 # 🪄 chain-enhance
 
 > **Sequentially chain multiple SvelteKit 5 form actions** with:
