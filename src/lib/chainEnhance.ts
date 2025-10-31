@@ -27,15 +27,14 @@ function safeStringify(value: unknown): string {
 	}
 }
 
-/**
- * Merge step payloads deeply
- */
 function deepMerge<T extends Record<string, unknown>>(
 	target: T,
 	source: Record<string, unknown>
 ): T {
 	for (const [key, srcVal] of Object.entries(source)) {
 		const tgtVal = target[key];
+
+		// 1️⃣ Both are plain objects → recurse deeply
 		if (
 			srcVal &&
 			typeof srcVal === 'object' &&
@@ -44,14 +43,25 @@ function deepMerge<T extends Record<string, unknown>>(
 			typeof tgtVal === 'object' &&
 			!Array.isArray(tgtVal)
 		) {
-			(target as Record<string, unknown>)[key] = deepMerge(
+			target[key] = deepMerge(
 				{ ...(tgtVal as Record<string, unknown>) },
 				srcVal as Record<string, unknown>
 			);
-		} else {
+		}
+
+		// 2️⃣ Arrays → merge by index (only replace defined elements)
+		else if (Array.isArray(srcVal) && Array.isArray(tgtVal)) {
+			const mergedArray = tgtVal.map((v, i) => (srcVal[i] !== undefined ? srcVal[i] : v));
+			if (srcVal.length > tgtVal.length) mergedArray.push(...srcVal.slice(tgtVal.length));
+			(target as Record<string, unknown>)[key] = mergedArray as unknown;
+		}
+
+		// 3️⃣ Primitives → overwrite only if defined
+		else if (srcVal !== undefined && srcVal !== null) {
 			(target as Record<string, unknown>)[key] = srcVal as unknown;
 		}
 	}
+
 	return target;
 }
 

@@ -98,7 +98,9 @@
       const rendered = await md.parse(content);
       htmlReadme = DOMPurify.sanitize(rendered as string);
 
+			/*
       console.log('📘 Loaded README.md successfully');
+			*/
     } catch (err) {
       console.error('❌ Failed to load README:', err);
       htmlReadme = '<p style="color:red;">Failed to load documentation.</p>';
@@ -179,28 +181,71 @@
           </div>
 
           {#if chain.step && chain.step !== 'complete'}
-            <div class="progress-step">
-              <div class="step-title">
-                Step {chain.current} of {chain.total} — <strong>{chain.step}</strong>
-              </div>
+						<div class="progress-step">
+							<div class="step-title">
+								<div class="stage-badge" data-step={chain.step}>
+									<span class="stage-dot"></span>
+									<span class="stage-label">{chain.step}</span>
+								</div>
+								<div class="stage-count">
+									Step {chain.current} of {chain.total}
+								</div>
+							</div>
 
-              <div class="progress-bar">
-                <div class="progress-fill" style="width: {chain.percent}%;"></div>
-              </div>
+							<div class="progress-bar">
+								<div class="progress-fill" style="width: {chain.percent}%;"></div>
+							</div>
 
-              {#if chain.percent < 100}
-                <p class="progress-time">
-                  ⏱ Elapsed: {elapsed}ms
-                </p>
-              {/if}
-            </div>
+							{#if chain.percent < 100}
+								<p class="progress-time">
+									⏱ Elapsed: {elapsed}ms
+								</p>
+							{/if}
+						</div>
           {/if}
         </div>
 			{:else if formState === 'complete'}
 				<div class="success-card">
 					<h2>✅ Workflow Complete!</h2>
-					<p>All chained actions succeeded. Here’s the final result:</p>
-					<pre>{JSON.stringify(result, null, 2)}</pre>
+					<p>All chained actions succeeded — here’s a summary of your workflow:</p>
+
+					{#if result?.final}
+						<div class="result-card">
+							<header class="result-header">
+								<h3>{result.final.title}</h3>
+								<p class="result-meta">🆔 {result.final.projectId}</p>
+							</header>
+
+							<div class="result-body">
+								<p><strong>📝 Abstract:</strong> {result.final.abstract}</p>
+								<p><strong>📄 Description:</strong> {result.final.description}</p>
+								<p><strong>🔢 Word Count:</strong> {result.final.wordCount}</p>
+								<p><strong>🕓 Timestamp:</strong> {new Date(result.final.timestamp).toLocaleString()}</p>
+								<p><strong>🏷️ Keywords:</strong> {result.final.meta?.keywords?.join(', ')}</p>
+								<p><strong>✨ Summary:</strong> {result.final.summary}</p>
+							</div>
+
+							<details class="result-details">
+								<summary>View Raw JSON</summary>
+								<pre>{JSON.stringify(result, null, 2)}</pre>
+							</details>
+
+							<div class="result-history">
+								<h4>⏱ Step History</h4>
+								<ul>
+									{#each result.history as step}
+										<li>
+											<span class="step-dot" data-ok={step.ok}></span>
+											<strong>{step.step}</strong>
+											<span class="step-time">{step.durationMs.toFixed(1)}ms</span>
+											<span class="step-msg">— {step.message}</span>
+										</li>
+									{/each}
+								</ul>
+							</div>
+						</div>
+					{/if}
+
 					<button class="try-again" onclick={reset}>🔁 Try Again</button>
 				</div>
 			{/if}
@@ -442,4 +487,224 @@
     font-style: italic;
     margin: 2rem 0;
   }
+
+	/* =============================
+   🎨 STAGE BADGE VISUALIZATION
+============================= */
+
+.stage-badge {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.5rem;
+	font-weight: 600;
+	text-transform: capitalize;
+	padding: 0.4rem 0.75rem;
+	border-radius: 999px;
+	color: #fff;
+	background-color: var(--color-accent);
+	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+	animation: pulseStage 0.6s ease;
+	transition: background 0.3s ease, transform 0.3s ease;
+}
+
+.stage-dot {
+	width: 0.75rem;
+	height: 0.75rem;
+	border-radius: 50%;
+	background: currentColor;
+}
+
+/* Color changes per step */
+.stage-badge[data-step='upload'] {
+	background: #3b82f6; /* blue */
+}
+.stage-badge[data-step='markdown'] {
+	background: #facc15; /* yellow */
+	color: #222;
+}
+.stage-badge[data-step='seo'] {
+	background: #f97316; /* orange */
+}
+.stage-badge[data-step='save'] {
+	background: #22c55e; /* green */
+}
+.stage-badge[data-step='publish'] {
+	background: #a855f7; /* purple */
+}
+
+/* subtle pop animation when changing steps */
+@keyframes pulseStage {
+	from {
+		transform: scale(0.9);
+		opacity: 0.5;
+	}
+	to {
+		transform: scale(1);
+		opacity: 1;
+	}
+}
+
+/* Stage count (right side of badge) */
+.stage-count {
+	font-weight: 500;
+	color: var(--color-text-muted);
+	font-size: 0.9rem;
+	margin-top: 0.25rem;
+}
+
+/* ========== Responsive ========== */
+@media (max-width: 600px) {
+	.stage-badge {
+		padding: 0.3rem 0.6rem;
+		font-size: 0.9rem;
+	}
+	.stage-dot {
+		width: 0.6rem;
+		height: 0.6rem;
+	}
+	.stage-count {
+		font-size: 0.8rem;
+	}
+}
+/* -------------------------------------------
+   🎨 Result Summary Card
+------------------------------------------- */
+.result-card {
+	background: linear-gradient(
+		160deg,
+		var(--color-surface),
+		color-mix(in srgb, var(--color-accent) 8%, var(--color-surface))
+	);
+	border: 1px solid var(--color-border);
+	border-radius: 14px;
+	padding: 1.75rem;
+	margin-top: 1.25rem;
+	box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+	color: var(--color-text);
+	animation: fadeIn 0.4s ease;
+}
+
+.result-header h3 {
+	font-size: 1.5rem;
+	margin-bottom: 0.3rem;
+}
+
+.result-meta {
+	font-size: 0.85rem;
+	color: var(--color-text-muted);
+	font-family: monospace;
+}
+
+.result-body {
+	margin-top: 1rem;
+	line-height: 1.6;
+}
+
+.result-body p {
+	margin: 0.4rem 0;
+	word-break: break-word;
+}
+
+.result-details {
+	margin-top: 1rem;
+}
+
+.result-details summary {
+	cursor: pointer;
+	font-weight: 600;
+	color: var(--color-accent);
+}
+
+.result-details pre {
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius);
+	padding: 1rem;
+	margin-top: 0.5rem;
+	overflow-x: auto;
+	max-height: 400px;
+	font-size: 0.85rem;
+}
+
+/* Step History */
+.result-history {
+	margin-top: 1.25rem;
+}
+
+.result-history h4 {
+	font-size: 1.1rem;
+	margin-bottom: 0.5rem;
+	color: var(--color-accent);
+}
+
+.result-history ul {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+}
+
+.result-history li {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	margin-bottom: 0.4rem;
+	font-size: 0.95rem;
+}
+
+.step-dot {
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	background: var(--color-border);
+	display: inline-block;
+}
+
+.step-dot[data-ok='true'] {
+	background: var(--color-success);
+}
+
+.step-dot[data-ok='false'] {
+	background: var(--color-danger);
+}
+
+.step-time {
+	color: var(--color-text-muted);
+	font-size: 0.85rem;
+	margin-left: auto;
+	font-family: monospace;
+}
+
+.step-msg {
+	color: var(--color-text-muted);
+	font-style: italic;
+}
+
+/* 🪄 Animation */
+@keyframes fadeIn {
+	from {
+		opacity: 0;
+		transform: translateY(6px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+/* 📱 Mobile adjustments */
+@media (max-width: 600px) {
+	.result-card {
+		padding: 1.25rem;
+	}
+	.result-header h3 {
+		font-size: 1.25rem;
+	}
+	.result-body p {
+		font-size: 0.9rem;
+	}
+	.result-history li {
+		font-size: 0.85rem;
+	}
+}
 </style>

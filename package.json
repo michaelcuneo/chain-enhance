@@ -1,6 +1,6 @@
 {
 	"name": "@michaelcuneo/chain-enhance",
-	"version": "0.0.1",
+	"version": "0.0.2",
 	"description": "Sequentially chain multiple SvelteKit 5 form actions with progress tracking, deep merge, and type safety.",
 	"type": "module",
 	"public": true,

@@ -9,6 +9,21 @@ Designed for real multi-stage workflows like
 
 ---
 
+## 🌐 See It In Action
+
+**Live Demo:**  
+🔗 [https://chain-enhance.michaelcuneo.com.au](https://chain-enhance.michaelcuneo.com.au)
+
+This demo showcases a full multi-step content workflow using  
+`@michaelcuneo/chain-enhance` — including file upload, markdown parsing,  
+SEO generation, database save simulation, and publish confirmation —  
+all chained seamlessly with real-time progress tracking.
+
+> Built with **SvelteKit 5**, **TypeScript**, and **SST v3**.  
+> Deployed on AWS via **CloudFront + Lambda**.
+
+---
+
 ## 🚀 Install
 
 ```bash
@@ -209,21 +224,39 @@ export interface ChainEnhanceCallbacks {
 
 ---
 
-## 🧠 Deep Merge
+## 🧠 Deep Merge & Automatic Data Forwarding
 
-Nested objects are recursively merged between steps.
-Arrays and primitives are replaced.
+Each step in your workflow receives the **full, merged dataset** from all previous steps —  
+you no longer need to manually forward every field like `title`, `description`, or `meta`.
 
-```ts
-// Step A
-data: { meta: { title: 'Hello', keywords: ['x'] } }
+`chainEnhance` performs a recursive **deep merge** between step results:
 
-// Step B
-data: { meta: { description: 'World' } }
+- **Objects** are merged deeply so nested keys are preserved.
+- **Arrays** merge by index — new elements replace or extend existing ones.
+- **Primitives** overwrite only when defined (avoiding accidental wipes).
 
-// Result
-combined = { meta: { title: 'Hello', keywords: ['x'], description: 'World' } }
-```
+````ts
+// Step 1 (upload)
+data: {
+  title: 'My Project',
+  description: 'Full markdown description...',
+  meta: { keywords: ['svelte', 'chain'] }
+}
+
+// Step 2 (seo)
+data: {
+  meta: { description: 'SEO summary' }
+}
+
+// ✅ Combined result after step 2
+{
+  title: 'My Project',
+  description: 'Full markdown description...',
+  meta: {
+    keywords: ['svelte', 'chain'],
+    description: 'SEO summary'
+  }
+}
 
 ---
 
@@ -243,7 +276,7 @@ $formChain = {
 	message: 'SEO metadata generated',
 	data: { meta: {...} }
 };
-```
+````
 
 ### API
 
